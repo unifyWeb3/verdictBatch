@@ -15,6 +15,7 @@ are only a bounty/deliverable-review fixture.
   fixtures. No provider or network access is required.
 - `scripts/prepare_demo.py` — independent SHA-256/Merkle preparation helper.
 - `examples/` — policy JSON and three-leaf bounty/deliverable fixture.
+- `evidence/` — read-only live Studionet evidence record.
 - `.env.example` — placeholder configuration only.
 
 ## Semantics
@@ -102,7 +103,14 @@ From the repository root:
 ```bash
 python3 -m pytest -q
 .venv/bin/genvm-lint lint contracts/verdict_batch.py
-GENVM_VERSION=genlayerlabs-genvm-v0.2.16 .venv/bin/genvm-lint check contracts/verdict_batch.py
+.venv/bin/genvm-lint check contracts/verdict_batch.py
+```
+
+If the linter is running in an environment with an already extracted GenVM
+runner, point it at that runner instead of downloading another release:
+
+```bash
+GENVMROOT=/path/to/genvm .venv/bin/genvm-lint check contracts/verdict_batch.py
 ```
 
 The direct suite covers empty/malformed batches, duplicate leaf IDs, invalid
@@ -237,21 +245,31 @@ arguments is rejected.
 
 ## Deployment and evidence record
 
-The live deployment record must be filled only from Studio responses; no
-placeholder address or transaction ID is evidence. Record:
+The live run is recorded in
+[`evidence/studionet-2026-09-25.md`](evidence/studionet-2026-09-25.md). The
+observed deployment was:
 
 ```text
 network alias:       studionet
-chain ID:            61999
-contract address:    PENDING_LIVE_DEPLOYMENT
-deploy transaction:  PENDING_LIVE_DEPLOYMENT
-commit transaction:  PENDING_LIVE_DEMO
-challenge transaction: PENDING_LIVE_DEMO
-review transaction:  PENDING_LIVE_DEMO
-close transaction:   PENDING_LIVE_DEMO
-protocol statuses:   PENDING_LIVE_DEMO
-execution results:   PENDING_LIVE_DEMO
+RPC:                 https://studio.genlayer.com/api
+chain ID:            61999 (eth_chainId 0xf22f)
+contract address:    0xCf2E8A9b28330b6cb8ff9da72eCE6827eE20996d
+deploy transaction:  0x95c588816b3b3d3016dd9aca7027f38965637eb87bc46cbc18439191ecc6f57d
+valid commit:        0x75637cdce1d0b6c2abf75f86281fafcca2e4c096ea795747b2d8b591bbccbe7b
+wrong challenge:     0x72c0dbb1a5d0c0b3dc99f2268fdae401c7790c5746f5d2faa9416631d32fe762
+wrong review:        0x8d01a7ab3bf11a5d2344b19d1290938f7bdc8d044f432872b1d34c490c4fd24a
+valid close:         0xf9bbce42d013717ca61cb36797f69c63c73fe5939dd8138fc805b1cded2a1cec
+wrong close:         0xa4ef01f7f9ad7088a5aac61dc857db9cbc367b77968d2b3c4c6eb8016877f83c
+ambiguous review:    0x0d6a80af4dce68fefbe6d6e310121551402ee2a3a775c9d8b7117f240895fc05
 ```
 
-Do not mark the live flow complete until the address, transaction IDs,
-protocol status, and execution result have all been read back from Studio.
+The run read back `FINALIZED_VALID` for the uncontested batch,
+`FINALIZED_INVALID` with a reward of `3` for the contradicted leaf, and
+`UNRESOLVED` for the ambiguous leaf. The evidence file records protocol status,
+consensus result, and leader execution result separately. It also records the
+one transient Studio HTTP disconnect and the idempotent retry used to complete
+the ambiguous review.
+
+This is a live Studionet demonstration, not production escrow. The ambiguous
+batch was intentionally left `UNRESOLVED`; its locked internal bonds are
+released only by a later `retry_review`/`close_unresolved` path.
