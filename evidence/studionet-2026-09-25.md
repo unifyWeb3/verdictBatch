@@ -17,6 +17,7 @@ claim about `studio-dev.genlayer.com`.
 | Deployment protocol status | `FINALIZED` |
 | Deployment consensus result | `MAJORITY_AGREE` |
 | Deployment leader execution | `SUCCESS` |
+| Deployed source SHA-256 | `005b50903d49075ec27244268fae1cde38757262d5506e5f39c0423d45ca52cf` (matches the local contract bytes) |
 
 The deployment receipt also contained a quorum-cancellation record for a
 non-leading validator. The leader execution and protocol result were read
