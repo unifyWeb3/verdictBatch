@@ -1,0 +1,13 @@
+{
+  "min_operator_bond": 10,
+  "min_challenger_bond": 5,
+  "challenge_window_seconds": 120,
+  "review_window_seconds": 900,
+  "max_review_rounds": 2,
+  "max_leaves": 16,
+  "reward_on_invalidation": 3,
+  "invalidates_on_challenge": true,
+  "allow_cancel": true,
+  "decision_criteria": "A deliverable decision is SUPPORTED when the evidence shows every required artifact, including automated tests and exact reproduction steps. It is CONTRADICTED when the evidence shows a required artifact is missing. It is INCONCLUSIVE when reviewer notes conflict or the rubric/evidence is insufficient. Never infer malice from disagreement.",
+  "domain": "bounty deliverable review"
+}

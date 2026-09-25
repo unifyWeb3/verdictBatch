@@ -1,0 +1,17 @@
+[
+  {
+    "leaf_id": "deliverable-001",
+    "decision": "ACCEPT",
+    "evidence": "The submission includes the required automated tests, README, and exact reproduction steps."
+  },
+  {
+    "leaf_id": "deliverable-002",
+    "decision": "ACCEPT",
+    "evidence": "The submission contains only a README and no automated tests, although the rubric requires a passing test run."
+  },
+  {
+    "leaf_id": "deliverable-003",
+    "decision": "ACCEPT",
+    "evidence": "One reviewer says the deliverable is complete while another says a required artifact is missing; the supplied rubric excerpt is truncated."
+  }
+]
