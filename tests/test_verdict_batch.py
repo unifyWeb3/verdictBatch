@@ -99,6 +99,13 @@ def _set_prompt(env, outcomes):
             raise RuntimeError("simulated provider failure")
         if isinstance(outcome, str) and outcome == "MALFORMED":
             return "not json"
+        if isinstance(outcome, str) and outcome == "DIGEST_MISMATCH":
+            return {
+                "outcome": "SUPPORTED",
+                "reason_code": "FIXTURE",
+                "input_digest": "0" * 64,
+                "evidence_digest": evidence_digest,
+            }
         return {
             "outcome": outcome,
             "reason_code": "FIXTURE",
@@ -289,6 +296,50 @@ def test_review_outcomes_have_explicit_application_mapping(contract_env, outcome
     assert _status(contract_env) == expected
     assert "fraud" not in record["reason_code"].lower()
     assert contract.get_fraud_status("batch-1").startswith("NOT_ASSERTED")
+
+
+def test_supported_review_finalizes_valid_and_refunds(contract_env):
+    _setup_challenged(contract_env)
+    _set_prompt(contract_env, ["SUPPORTED"])
+    assert _status(contract_env) == "CHALLENGED"
+    record = json.loads(_review(contract_env))
+    assert record["outcome"] == "SUPPORTED"
+    assert _status(contract_env) == "UPHELD"
+    contract_env["clock"]["now"] = 1_100
+    settled = json.loads(contract_env["contract"].finalize_batch("finalize-supported", "batch-1"))
+    assert settled["status"] == "FINALIZED_VALID"
+    assert settled["settlement"]["challenger_reward"] == "0"
+    assert json.loads(contract_env["contract"].get_bond(OPERATOR))["available"] == "10"
+    assert json.loads(contract_env["contract"].get_bond(CHALLENGER))["available"] == "5"
+    assert contract_env["contract"].is_downstream_actionable("batch-1") is True
+
+
+def test_insufficient_operator_bond_is_rejected_without_locking(contract_env):
+    _fund(contract_env, OPERATOR, 9, "fund-operator-short")
+    leaves = make_leaves()
+    _sender(contract_env, OPERATOR)
+    with pytest.raises(UserError, match="below the policy minimum"):
+        contract_env["contract"].commit_batch("commit-short", "batch-short", json.dumps(leaves), _root(leaves), 9)
+    assert json.loads(contract_env["contract"].get_bond(OPERATOR))["locked"] == "0"
+
+
+def test_insufficient_challenger_bond_is_rejected_without_locking(contract_env):
+    _fund(contract_env, OPERATOR, 10, "fund-operator-challenger-short")
+    _commit(contract_env, action="commit-challenger-short")
+    _fund(contract_env, CHALLENGER, 4, "fund-challenger-short")
+    with pytest.raises(UserError, match="below the policy minimum"):
+        _challenge(contract_env, bond=4, action="challenge-short")
+    assert _status(contract_env) == "COMMITTED"
+    assert json.loads(contract_env["contract"].get_bond(CHALLENGER))["locked"] == "0"
+
+
+def test_digest_mismatched_schema_output_writes_no_review(contract_env):
+    _setup_challenged(contract_env)
+    _set_prompt(contract_env, ["DIGEST_MISMATCH"])
+    with pytest.raises(ConsensusFailure):
+        _review(contract_env)
+    assert _status(contract_env) == "CHALLENGED"
+    assert contract_env["contract"].get_review("batch-1", "challenge-1", 1) == ""
 
 
 def test_malformed_llm_json_is_not_committed_as_a_review(contract_env):

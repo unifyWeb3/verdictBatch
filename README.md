@@ -1,9 +1,9 @@
 # VerdictBatch
 
-VerdictBatch is an evidence-gated, leaf-disputable batch adjudication
-primitive for GenLayer Intelligent Contracts. It is deliberately small: one
-operator commits a batch, a challenger disputes one leaf, and validators review
-that leaf under a declared policy.
+VerdictBatch is an evidence-gated batch adjudication primitive for GenLayer
+Intelligent Contracts. It is deliberately small: one operator commits a batch,
+a challenger requests independent review of one committed leaf, and validators
+review that leaf under a declared policy.
 
 The contract is policy-driven and domain-neutral. The files under `examples/`
 are only a bounty/deliverable-review fixture.
@@ -16,6 +16,7 @@ are only a bounty/deliverable-review fixture.
 - `scripts/prepare_demo.py` — independent SHA-256/Merkle preparation helper.
 - `examples/` — policy JSON and three-leaf bounty/deliverable fixture.
 - `evidence/` — read-only live Studionet evidence record.
+- `requirements-dev.txt` — pinned test and contract-validation dependencies.
 - `.env.example` — placeholder configuration only.
 
 ## Semantics
@@ -25,7 +26,7 @@ Application states are independent of the GenLayer protocol transaction state:
 | Application state | Meaning |
 | --- | --- |
 | `COMMITTED` | Root and leaves are committed; challenge window is open. |
-| `CHALLENGED` | One active leaf challenge is escrowed internally. |
+| `CHALLENGED` | One active leaf challenge is recorded and its internal ledger units are locked. |
 | `UPHELD` | Review outcome was `SUPPORTED`; the original decision survives. |
 | `INVALIDATED` | Review outcome was `CONTRADICTED`; the batch is rejected. |
 | `UNRESOLVED` | Review was `INCONCLUSIVE`, or no consensus was recorded. |
@@ -80,16 +81,29 @@ This is **not production escrow** and no native token transfer is performed in
 v1. The ledger is an application-level accounting primitive so the flow can be
 demonstrated on Studio without claiming custody of funds.
 
+## Exact v1 boundaries
+
+These boundaries are intentional and are not a promise of a production dispute
+or bond system:
+
+- A challenge is a permissionless request for independent review of one
+  committed leaf. It is not a counter-evidence submission.
+- The challenger's `reason` is audit metadata and is digest-bound. It is not
+  counter-evidence and is not sent to the model as evidence.
+- `fund_bond` credits internal application units only. It is not payable, does
+  not custody funds, and does not transfer native GEN.
+- Refunds and `reward_on_invalidation` are internal accounting entries. They
+  are not slashing, escrow, or an enforceable economic transfer.
+- Only `FINALIZED_VALID` is downstream-actionable. `FINALIZED_INVALID`,
+  `UNRESOLVED`, `CHALLENGED`, and all other states are not actionable.
+- v1 allows one active challenge per batch and a bounded number of review
+  rounds.
+- Native GEN settlement, external evidence sources, and real economic security
+  are future work outside this contribution.
+
 ## Requirements
 
 - Python 3.12+ for the direct tests and preparation script.
-- `genvm-linter` for contract validation:
-
-```bash
-python3 -m venv .venv
-.venv/bin/pip install genvm-linter
-```
-
 - GenLayer Studio at <https://studio.genlayer.com/> for the live flow.
 - Use the stable hosted network only:
 
@@ -102,6 +116,13 @@ chain ID: 61999
 Do not use `studio-dev.genlayer.com` (chain ID `61997`) for this contribution.
 It is a separate preview network.
 
+Install the pinned development dependencies:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+```
+
 ## Direct verification
 
 From the repository root:
@@ -109,19 +130,19 @@ From the repository root:
 ```bash
 python3 -m pytest -q
 .venv/bin/genvm-lint lint contracts/verdict_batch.py
-.venv/bin/genvm-lint check contracts/verdict_batch.py
+GENVMROOT=/path/to/extracted/genvm-v0.2.16 \
+  .venv/bin/genvm-lint check contracts/verdict_batch.py
 ```
 
-If the linter is running in an environment with an already extracted GenVM
-runner, point it at that runner instead of downloading another release:
-
-```bash
-GENVMROOT=/path/to/genvm .venv/bin/genvm-lint check contracts/verdict_batch.py
-```
+The successful SDK validation used an already extracted GenVM **v0.2.16**
+runner. `GENVMROOT` is configurable; the successful command shape is shown
+above. The plain linter download path was not verified in this environment and
+must not be treated as equivalent without a working runner/artifact source.
 
 The direct suite covers empty/malformed batches, duplicate leaf IDs, invalid
 Merkle proofs, owner authorization, self-challenge, duplicate challenges,
-expired windows, all three review outcomes, malformed LLM JSON, provider
+expired windows, insufficient operator and challenger bonds, all three review
+outcomes, malformed LLM JSON, schema-shaped digest-mismatched output, provider
 failure, conflicting validator verdicts, settlement, refunds/rewards, and
 idempotency/state guards. The LLM is replaced by a fixed local response
 function; this proves contract logic, not live model behavior.

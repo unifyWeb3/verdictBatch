@@ -121,11 +121,45 @@ NOT_ASSERTED: application verdicts are not fraud findings
 
 ## Local and Studio checks
 
-- `python3 -m pytest -q`: **29 passed**.
-- `GENVMROOT=/tmp/opencode/genvmroot .venv/bin/genvm-lint check contracts/verdict_batch.py`: **lint and SDK validation passed**, 22 methods (13 view, 9 write).
-- Studio `sim_lintContract`: **0 findings** (0 errors, 0 warnings, 0 info).
-- Studio `gen_getContractSchemaForCode`: **22 methods** (13 view, 9 write).
-- SHA-256/Merkle tests compare the contract digest of `b"abc"` with Python `hashlib.sha256` and compare the root with an independent implementation.
+The successful SDK validation used an already extracted GenVM **v0.2.16** runner.
+The machine-specific runner path is intentionally not recorded; configure it
+through `GENVMROOT`.
+
+```bash
+python3 -m pytest -q
+# 33 passed
+
+GENVMROOT=/path/to/extracted/genvm-v0.2.16 \
+  .venv/bin/genvm-lint check contracts/verdict_batch.py
+# Lint and SDK validation passed: 22 methods (13 view, 9 write)
+
+.venv/bin/genvm-lint lint contracts/verdict_batch.py
+# Lint passed (3 checks)
+
+git diff --check
+# clean: no whitespace errors
+
+sha256sum contracts/verdict_batch.py
+# ce51ae2a9baa5064814a25e0861d66d6572eb0e56b795cc79b4be304056c50d8
+```
+
+The direct tests compare the contract digest of `b"abc"` with Python
+`hashlib.sha256` and compare the Merkle root with an independent
+implementation. A secret scan over tracked files found no key material; the
+only matches were the `.env.example` placeholders.
+
+Studio checks:
+
+- `sim_lintContract`: **0 findings** (0 errors, 0 warnings, 0 info).
+- `gen_getContractSchemaForCode`: **22 methods** (13 view, 9 write).
+- Studio provider: **not recorded**.
+- Studio model: **not recorded**.
+- Studio validator set: **not recorded**.
+
+The exact deployed address, transaction IDs, application states, and source
+hash above are preserved. This evidence file and the accompanying README/setup
+changes are documentation and test metadata only; they do not change the
+already deployed contract.
 
 ## Known limitations of this run
 

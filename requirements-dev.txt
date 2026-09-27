@@ -1,0 +1,3 @@
+# Direct test and contract-validation dependencies.
+pytest==7.4.4
+genvm-linter==0.11.0
