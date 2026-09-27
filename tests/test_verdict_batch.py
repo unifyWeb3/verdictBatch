@@ -186,6 +186,52 @@ def test_valid_merkle_proof_and_invalid_proof_are_distinct(contract_env):
     assert _status(contract_env) == "CHALLENGED"
 
 
+def test_review_mark_and_retry_replays_are_idempotent(contract_env):
+    _setup_challenged(contract_env)
+    _set_prompt(contract_env, ["INCONCLUSIVE"])
+    first_review = _review(contract_env, action="review-replay")
+    second_review = _review(contract_env, action="review-replay")
+    assert json.loads(first_review) == json.loads(second_review)
+    first_retry = contract_env["contract"].retry_review("retry-replay", "batch-1", "challenge-1")
+    second_retry = contract_env["contract"].retry_review("retry-replay", "batch-1", "challenge-1")
+    assert json.loads(first_retry) == json.loads(second_retry)
+
+
+def test_mark_unresolved_replay_is_idempotent(contract_env):
+    _setup_challenged(contract_env)
+    contract_env["clock"]["now"] = 1_051
+    first = contract_env["contract"].mark_unresolved("mark-replay", "batch-1", "challenge-1")
+    second = contract_env["contract"].mark_unresolved("mark-replay", "batch-1", "challenge-1")
+    assert json.loads(first) == json.loads(second)
+
+
+def test_challenge_replay_survives_expiry(contract_env):
+    _setup_challenged(contract_env)
+    contract_env["clock"]["now"] = 1_100
+    replay = _challenge(contract_env, action="challenge-batch-1")
+    assert json.loads(replay)["challenge_id"] == "challenge-1"
+    assert _status(contract_env) == "CHALLENGED"
+
+
+def test_storage_tuple_keys_do_not_alias(contract_env):
+    module = contract_env["module"]
+    assert module._tuple_key("a:b", "c") != module._tuple_key("a", "b:c")
+    assert module._tuple_key("a", "b", "1") != module._tuple_key("a", "b:1")
+
+
+def test_non_power_of_two_proof_shape_is_rejected(contract_env):
+    contract = contract_env["contract"]
+    leaves = make_leaves()
+    root = _root(leaves)
+    assert contract.verify_merkle_proof(
+        _sha256(json.dumps(leaves[0], sort_keys=True, separators=(",", ":")).encode()),
+        json.dumps(_proof(leaves, 0)),
+        root,
+        0,
+        5,
+    ) is False
+
+
 def test_operator_cannot_challenge_and_second_challenge_is_rejected(contract_env):
     _fund(contract_env, OPERATOR, 15, "fund-self")
     _commit(contract_env, action="commit-self")
@@ -238,17 +284,20 @@ def test_review_outcomes_have_explicit_application_mapping(contract_env, outcome
     _set_prompt(contract_env, [outcome])
     record = json.loads(_review(contract_env))
     assert record["outcome"] == outcome
+    assert record["normalization"] == "SCHEMA_VALIDATED"
+    assert "consensus" not in record
     assert _status(contract_env) == expected
     assert "fraud" not in record["reason_code"].lower()
     assert contract.get_fraud_status("batch-1").startswith("NOT_ASSERTED")
 
 
-def test_malformed_llm_json_stays_inconclusive(contract_env):
+def test_malformed_llm_json_is_not_committed_as_a_review(contract_env):
     _setup_challenged(contract_env)
     _set_prompt(contract_env, ["MALFORMED"])
-    record = json.loads(_review(contract_env))
-    assert record["outcome"] == "INCONCLUSIVE"
-    assert _status(contract_env) == "UNRESOLVED"
+    with pytest.raises(ConsensusFailure):
+        _review(contract_env)
+    assert _status(contract_env) == "CHALLENGED"
+    assert contract_env["contract"].get_review("batch-1", "challenge-1", 1) == ""
 
 
 def test_llm_provider_failure_does_not_change_application_state(contract_env):
@@ -278,6 +327,27 @@ def test_expired_review_becomes_unresolved_without_fraud(contract_env):
     assert record["outcome"] == "INCONCLUSIVE"
     assert _status(contract_env) == "UNRESOLVED"
     assert contract_env["contract"].get_fraud_status("batch-1").startswith("NOT_ASSERTED")
+
+
+def test_inconclusive_review_can_be_retried(contract_env):
+    _setup_challenged(contract_env)
+    _set_prompt(contract_env, ["INCONCLUSIVE"])
+    _review(contract_env)
+    assert _status(contract_env) == "UNRESOLVED"
+    contract_env["contract"].retry_review("retry-inconclusive", "batch-1", "challenge-1")
+    assert _status(contract_env) == "CHALLENGED"
+    challenge = json.loads(contract_env["contract"].get_challenge("batch-1", "challenge-1"))
+    assert challenge["round"] == 2
+
+
+def test_only_finalized_valid_is_downstream_actionable(contract_env):
+    _fund(contract_env, OPERATOR, 10, "fund-actionable")
+    _commit(contract_env, action="commit-actionable")
+    contract = contract_env["contract"]
+    assert contract.is_downstream_actionable("batch-1") is False
+    contract_env["clock"]["now"] = 1_100
+    contract.finalize_batch("finalize-actionable", "batch-1")
+    assert contract.is_downstream_actionable("batch-1") is True
 
 
 def test_unresolved_can_retry_then_close_with_refunds(contract_env):

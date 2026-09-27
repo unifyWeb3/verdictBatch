@@ -1,8 +1,8 @@
 {
   "min_operator_bond": 10,
   "min_challenger_bond": 5,
-  "challenge_window_seconds": 120,
-  "review_window_seconds": 900,
+  "challenge_window_seconds": 60,
+  "review_window_seconds": 300,
   "max_review_rounds": 2,
   "max_leaves": 16,
   "reward_on_invalidation": 3,

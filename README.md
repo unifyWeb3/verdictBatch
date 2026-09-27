@@ -50,7 +50,13 @@ The v1 contract rejects those proofs instead of creating a fraud state.
 LLM output is constrained to a small JSON object. Validators independently
 repeat the review and compare the normalized `outcome` and digests, not
 free-form reasoning. Malformed output, missing evidence, a provider failure, or
-validator disagreement is not silently converted into a successful challenge.
+validator disagreement is rejected by the validator and does not write a
+review or silently become a successful challenge. A schema-valid
+`INCONCLUSIVE` response is recorded as normalized evidence and remains
+`UNRESOLVED`. The challenger reason is stored and digest-bound, but is not sent
+to the model as instructions; only the declared policy and committed leaf
+evidence drive the review. `get_review`'s `normalization=SCHEMA_VALIDATED` is a
+contract-side schema marker; it is not a GenLayer protocol status.
 
 ### Canonical leaves and Merkle proofs
 
@@ -156,25 +162,28 @@ Use the printed `leaves_json` and `root` in `commit_batch`. Use the printed
    Read `get_batch("bounty-001")` and `get_leaf(...)`; the state must be
    `COMMITTED` and the recomputed root must match.
 5. To demonstrate an uncontested valid close, wait until the policy's
-   `challenge_window_seconds` (120 seconds in the fixture) has elapsed, then
+   `challenge_window_seconds` (60 seconds in the fixture) has elapsed, then
    call `finalize_batch("finalize-bounty-001", "bounty-001")`. Read
    `get_batch` and `get_batch_status`; the expected application state is
    `FINALIZED_VALID`, with the operator bond returned. This is an application
    transition, not a claim that the GenLayer protocol transaction is finalized
    until its own status is checked.
 6. For a second batch, repeat steps 3–4 with a new batch ID. From a different
-   account, fund `5`, then call `challenge_leaf` using the proof for leaf `1`.
-   The expected state is `CHALLENGED`; an invalid or altered proof must fail
-   without locking the challenger bond.
+   account, fund the policy minimum bond, then call `challenge_leaf` using the
+   proof for leaf `1`. The expected state is `CHALLENGED`; an invalid or
+   altered proof must fail without locking the challenger bond. Permissionless
+   means any funded address may challenge; the operator cannot challenge its
+   own batch.
 7. Call `review_challenge` from any account. The contract supplies the
-   validator/LLM the policy, canonical leaf, evidence, and digest-bound JSON
+   validator/LLM the policy, canonical leaf evidence, and digest-bound JSON
    schema. Wait for the GenLayer transaction's **execution result** as well as
    its protocol status. Read `get_review`, `get_batch_status`, and
    `get_fraud_status`. A `CONTRADICTED` result should become `INVALIDATED`; a
-   `SUPPORTED` result should become `UPHELD`; malformed or non-convergent
-   output must not become `FINALIZED_INVALID`.
-8. For an `INVALIDATED` or `UPHELD` batch, wait for the review window if the
-   status is still `CHALLENGED`, then call `finalize_batch`. Read the
+   `SUPPORTED` result should become `UPHELD`; a schema-valid `INCONCLUSIVE`
+   result becomes `UNRESOLVED`. A malformed or non-convergent response must not
+   write a review or become `FINALIZED_INVALID`.
+8. For an `INVALIDATED` or `UPHELD` batch, wait until the policy's
+   `review_window_seconds` has elapsed, then call `finalize_batch`. Read the
    `settlement` object and both `get_bond` records. An invalidated batch shows
    `operator_refund`, `challenger_refund`, and `challenger_reward`; the
    reward is internal accounting, not a fraud penalty.
@@ -199,6 +208,7 @@ get_policy()
 get_policy_hash()
 get_batch(batch_id)
 get_batch_status(batch_id)
+is_downstream_actionable(batch_id)
 get_leaf(batch_id, leaf_index)
 get_challenge(batch_id, challenge_id)
 get_review(batch_id, challenge_id, review_round)
@@ -246,30 +256,37 @@ arguments is rejected.
 ## Deployment and evidence record
 
 The live run is recorded in
-[`evidence/studionet-2026-09-25.md`](evidence/studionet-2026-09-25.md). The
-observed deployment was:
+[`evidence/studionet-2026-09-27.md`](evidence/studionet-2026-09-27.md). The
+observed final deployment was:
 
 ```text
 network alias:       studionet
 RPC:                 https://studio.genlayer.com/api
 chain ID:            61999 (eth_chainId 0xf22f)
-contract address:    0xCf2E8A9b28330b6cb8ff9da72eCE6827eE20996d
-deploy transaction:  0x95c588816b3b3d3016dd9aca7027f38965637eb87bc46cbc18439191ecc6f57d
-valid commit:        0x75637cdce1d0b6c2abf75f86281fafcca2e4c096ea795747b2d8b591bbccbe7b
-wrong challenge:     0x72c0dbb1a5d0c0b3dc99f2268fdae401c7790c5746f5d2faa9416631d32fe762
-wrong review:        0x8d01a7ab3bf11a5d2344b19d1290938f7bdc8d044f432872b1d34c490c4fd24a
-valid close:         0xf9bbce42d013717ca61cb36797f69c63c73fe5939dd8138fc805b1cded2a1cec
-wrong close:         0xa4ef01f7f9ad7088a5aac61dc857db9cbc367b77968d2b3c4c6eb8016877f83c
-ambiguous review:    0x0d6a80af4dce68fefbe6d6e310121551402ee2a3a775c9d8b7117f240895fc05
+contract address:    0xEa9201204e56C09dd94fD243A22B99261C9504E9
+deploy transaction:  0x479668f3346a75b752fb6e01019ec55d969b49ae42f5929b48532fc6c7f11ec9
+source SHA-256:      ce51ae2a9baa5064814a25e0861d66d6572eb0e56b795cc79b4be304056c50d8
+valid commit:        0x08e91c58856865e05cb2e7c6c44a26c32e8f5d641fe1da3849dcf81b55cdcdfc
+valid close:         0x799df2c9b137ce16b0862393f934a488ae31c14a7d6f4c786fb841b81201d6d1
+wrong commit:        0xabc6cbdce916831135a45a1d24c7d8aad5e85217f115f0bb07bddfc01077ecdb
+wrong challenge:     0xdad69c532de3380db02078ddcc6c664a8080204a40b30c7c89da2a0d50c502bd
+wrong review:        0x5c8c38b7d6ec190c353ae6722b0e14b238fbf07362f8869528c609c4089a4e7b
+wrong close:         0xaba0f9d7f5a3544b2032c11916be6c9cb22301d9291aca82dc311779a6903fc3
+ambiguous commit:    0x60ac95d8f37243fea171a2fb5dc54d2a73b97fe4cff505a490309ef76c45aabc
+ambiguous challenge: 0x0b16fbcb1c880be9197ab1c3d1c217e0b90db1d465cdb616bb3451547dac2dab
+ambiguous mark:      0xd5007dda4a24645426f24535cba4c57184957b940821d8d88ef4a55309576714
+failed LLM review:   0x55db86c440c4d332869dd0b8abf0d2d33448df2f12dffe9723c6d1440b41c4b5
 ```
 
 The run read back `FINALIZED_VALID` for the uncontested batch,
 `FINALIZED_INVALID` with a reward of `3` for the contradicted leaf, and
-`UNRESOLVED` for the ambiguous leaf. The evidence file records protocol status,
-consensus result, and leader execution result separately. It also records the
-one transient Studio HTTP disconnect and the idempotent retry used to complete
-the ambiguous review.
+`UNRESOLVED` for the ambiguous leaf. The failed LLM review transaction reached
+protocol `FINALIZED`/`MAJORITY_AGREE` but its leader execution was `ERROR`; no
+application review was written. The evidence file records protocol status,
+consensus result, and leader execution result separately.
 
 This is a live Studionet demonstration, not production escrow. The ambiguous
 batch was intentionally left `UNRESOLVED`; its locked internal bonds are
-released only by a later `retry_review`/`close_unresolved` path.
+released only by a later `retry_review`/`close_unresolved` path. An earlier
+run was interrupted by a server restart; its cleanup and the final run are
+both recorded in the evidence file.
